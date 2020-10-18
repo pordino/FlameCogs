@@ -199,8 +199,9 @@ class MonopolyGame():
 	
 	async def send(self, *, img=False):
 		"""Safely send the contents of self.msg."""
-		if img:
-			await self.ctx.send(file=discord.File(self.bprint()))
+		if img and self.ctx.channel.permissions_for(self.ctx.me).attach_files:
+			dm = await self.cog.config.guild(self.ctx.guild).darkMode()
+			await self.ctx.send(file=discord.File(self.bprint(dm)))
 		for page in pagify(self.msg):
 			await self.ctx.send(page)
 		self.msg = ''
@@ -283,14 +284,13 @@ class MonopolyGame():
 					d1 = randint(1, 6)
 					d2 = randint(1, 6)
 					self.msg += f'You rolled a **{d1}** and a **{d2}**.\n'
+					self.was_doubles = False
 					if d1 == d2:
-						self.num_doubles += 1
 						self.jailturn[self.p] = -1
 						self.injail[self.p] = False
 						self.msg += 'You rolled out of jail!\n'
 						await self.land(d1 + d2)
 					else:
-						self.was_doubles = False
 						self.msg += 'Sorry, not doubles.\n'
 				elif choice == 'b':
 					if self.bal[self.p] < bailValue and not (
@@ -347,83 +347,75 @@ class MonopolyGame():
 						self.was_doubles = False
 					await self.land(d1 + d2)
 			#If not in jail, start a normal turn
-			else:
-				while self.was_doubles and self.isalive[self.p]:
-					self.msg += '`r`: Roll\n`t`: Trade\n`h`: Manage houses\n`m`: Mortgage properties\n'
-					if self.num_doubles == 0:
-						self.msg += '`s`: Save\n'
-					if self.is_ai(self.p):
-						config = await self.cog.config.guild(self.ctx.guild).all()
-						choice = self.uid[self.p].turn(self, config, ('r', 't', 'h', 'm'))
+			while self.was_doubles and self.isalive[self.p]:
+				self.msg += '`r`: Roll\n`t`: Trade\n`h`: Manage houses\n`m`: Mortgage properties\n'
+				if self.num_doubles == 0:
+					self.msg += '`s`: Save\n'
+				if self.is_ai(self.p):
+					config = await self.cog.config.guild(self.ctx.guild).all()
+					choice = self.uid[self.p].turn(self, config, ('r', 't', 'h', 'm'))
+				else:
+					await self.send(img=True)
+					choice = await self.bot.wait_for(
+						'message',
+						timeout=await self.cog.config.guild(self.ctx.guild).timeoutValue(),
+						check=lambda m: (
+							m.author.id == self.uid[self.p]
+							and m.channel == self.ctx.channel
+							and m.content.lower() in ('r', 't', 'h', 'm', 's')
+						)
+					)
+					choice = choice.content.lower()
+				if choice == 'r':
+					d1 = randint(1, 6)
+					d2 = randint(1, 6)
+					self.msg += f'You rolled a **{d1}** and a **{d2}**.\n'
+					if d1 == d2:
+						self.num_doubles += 1
 					else:
-						await self.send(img=True)
-						choice = await self.bot.wait_for(
-							'message',
-							timeout=await self.cog.config.guild(self.ctx.guild).timeoutValue(),
-							check=lambda m: (
-								m.author.id == self.uid[self.p]
-								and m.channel == self.ctx.channel
-								and m.content.lower() in ('r', 't', 'h', 'm', 's')
-							)
+						self.was_doubles = False
+					if self.num_doubles == 3:
+						self.tile[self.p] = 10
+						self.injail[self.p] = True
+						self.was_doubles = False
+						self.msg += 'You rolled doubles 3 times in a row, you are now in jail!\n'
+					else:
+						await self.land(d1 + d2)
+				elif choice == 't':
+					await self.trade()
+				elif choice == 'h':
+					await self.house()
+				elif choice == 'm':
+					await self.mortgage()
+				elif choice == 's' and self.num_doubles == 0:
+					await self.ctx.send('Save file name?')
+					choice = await self.bot.wait_for(
+						'message',
+						timeout=await self.cog.config.guild(self.ctx.guild).timeoutValue(),
+						check=lambda m: (
+							m.author.id == self.uid[self.p]
+							and m.channel == self.ctx.channel
 						)
-						choice = choice.content.lower()
-					if choice == 'r':
-						d1 = randint(1, 6)
-						d2 = randint(1, 6)
-						self.msg += f'You rolled a **{d1}** and a **{d2}**.\n'
-						if d1 == d2:
-							self.num_doubles += 1
-						else:
-							self.was_doubles = False
-						if self.num_doubles == 3:
-							self.tile[self.p] = 10
-							self.injail[self.p] = True
-							self.was_doubles = False
-							self.msg += 'You rolled doubles 3 times in a row, you are now in jail!\n'
-						else:
-							await self.land(d1 + d2)
-					elif choice == 't':
-						await self.trade()
-					elif choice == 'h':
-						await self.house()
-					elif choice == 'm':
-						await self.mortgage()
-					elif choice == 's' and self.num_doubles == 0:
-						await self.ctx.send('Save file name?')
-						choice = await self.bot.wait_for(
-							'message',
-							timeout=await self.cog.config.guild(self.ctx.guild).timeoutValue(),
-							check=lambda m: (
-								m.author.id == self.uid[self.p]
-								and m.channel == self.ctx.channel
+					)
+					savename = choice.content.replace(' ', '')
+					async with self.cog.config.guild(self.ctx.guild).saves() as saves:
+						if savename in ('delete', 'list'):
+							self.msg = 'You cannot name your save that.\n'
+						elif savename in saves:
+							await self.ctx.send(
+								'There is already another save with that name. Override it?'
 							)
-						)
-						savename = choice.content.replace(' ', '')
-						async with self.cog.config.guild(self.ctx.guild).saves() as saves:
-							if savename in ('delete', 'list'):
-								self.msg = 'You cannot name your save that.\n'
-							elif savename in saves:
-								await self.ctx.send(
-									'There is already another save with that name. Override it?'
+							timeout = await self.cog.config.guild(self.ctx.guild).timeoutValue()
+							choice = await self.bot.wait_for(
+								'message',
+								timeout=timeout,
+								check=lambda m: (
+									m.author.id == self.uid[self.p]
+									and m.channel == self.ctx.channel
 								)
-								timeout = await self.cog.config.guild(self.ctx.guild).timeoutValue()
-								choice = await self.bot.wait_for(
-									'message',
-									timeout=timeout,
-									check=lambda m: (
-										m.author.id == self.uid[self.p]
-										and m.channel == self.ctx.channel
-									)
-								)
-								if choice.content.lower() not in ('yes', 'y'):
-									self.msg = 'Not overriding.\n'
-								else:
-									saves[savename] = self.autosave
-									return await self.ctx.send(
-										f'Your game was saved to `{savename}`.\n'
-										'You can load your save with '
-										f'`{self.ctx.prefix}monopoly {savename}`.'
-									)
+							)
+							if choice.content.lower() not in ('yes', 'y'):
+								self.msg = 'Not overriding.\n'
 							else:
 								saves[savename] = self.autosave
 								return await self.ctx.send(
@@ -431,6 +423,13 @@ class MonopolyGame():
 									'You can load your save with '
 									f'`{self.ctx.prefix}monopoly {savename}`.'
 								)
+						else:
+							saves[savename] = self.autosave
+							return await self.ctx.send(
+								f'Your game was saved to `{savename}`.\n'
+								'You can load your save with '
+								f'`{self.ctx.prefix}monopoly {savename}`.'
+							)
 			#After roll
 			while self.isalive[self.p]:
 				self.msg += '`t`: Trade\n`h`: Manage houses\n`m`: Mortgage properties\n`d`: Done\n'
@@ -928,7 +927,7 @@ class MonopolyGame():
 			)
 			if self.is_ai(self.p):
 				config = await self.cog.config.guild(self.ctx.guild).all()
-				choice = self.uid[self.p].jail_turn(self, config, ('t', 'h', 'm', 'g'))
+				choice = self.uid[self.p].turn(self, config, ('t', 'h', 'm', 'g'))
 			else:
 				await self.send(img=True)
 				choice = await self.bot.wait_for(
@@ -1579,8 +1578,13 @@ class MonopolyGame():
 						f'it would take to unmortgage that. You only have ${self.bal[self.p]}.\n'
 					)
 	
-	def bprint(self): 
-		"""Creates an image of a monopoly board with the current game data."""
+	def bprint(self, darkMode): 
+		"""
+		Creates an image of a monopoly board with the current game data.
+		
+		Params:
+		darkMode = bool, use a darkmode board instead of a lightmode board.
+		"""
 		pcolor = [
 			(0, 0, 255, 255),
 			(255, 0, 0, 255),
@@ -1591,6 +1595,10 @@ class MonopolyGame():
 			(140, 0, 255, 255),
 			(255, 0, 255, 255)
 		]
+		if darkMode:
+			outline = (153,170,181,255)
+		else:
+			outline = (0,0,0,255)
 		#OWNEDBY
 		if self.imgcache['ownedby']['value'] != self.ownedby:
 			self.imgcache['ownedby']['value'] = self.ownedby.copy()
@@ -1601,7 +1609,7 @@ class MonopolyGame():
 					if 0 < t < 10:
 						d.rectangle(
 							[(650-(t*50))-39,702,(650-(t*50))-10,735],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[(650-(t*50))-37,702,(650-(t*50))-12,733],
@@ -1610,7 +1618,7 @@ class MonopolyGame():
 					elif 10 < t < 20:
 						d.rectangle(
 							[16,(650-((t-10)*50))-39,50,(650-((t-10)*50))-10],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[18,(650-((t-10)*50))-37,50,(650-((t-10)*50))-12],
@@ -1619,7 +1627,7 @@ class MonopolyGame():
 					elif 20 < t < 30:
 						d.rectangle(
 							[(100+((t-20)*50))+11,16,(100+((t-20)*50))+41,50],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[(100+((t-20)*50))+13,18,(100+((t-20)*50))+39,50],
@@ -1628,7 +1636,7 @@ class MonopolyGame():
 					elif 30 < t < 40:
 						d.rectangle(
 							[702,(100+((t-30)*50))+11,736,(100+((t-30)*50))+41],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[702,(100+((t-30)*50))+13,734,(100+((t-30)*50))+39],
@@ -1668,7 +1676,7 @@ class MonopolyGame():
 					continue
 				if self.tile[t-1] == 0:
 					d.rectangle(
-						[(12*(t-1))+604,636,(12*(t-1))+614,646], fill=(0,0,0,255)
+						[(12*(t-1))+604,636,(12*(t-1))+614,646], fill=outline
 					)
 					d.rectangle(
 						[(12*(t-1))+605,637,(12*(t-1))+613,645], fill=pcolor[t-1]
@@ -1677,7 +1685,7 @@ class MonopolyGame():
 					if t < 5:
 						d.rectangle(
 							[((650-(self.tile[t-1]*50))-47)+(12*(t-1)),636,((650-(self.tile[t-1]*50))-37)+(12*(t-1)),646],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[((650-(self.tile[t-1]*50))-46)+(12*(t-1)),637,((650-(self.tile[t-1]*50))-38)+(12*(t-1)),645],
@@ -1686,7 +1694,7 @@ class MonopolyGame():
 					else:
 						d.rectangle(
 							[((650-(self.tile[t-1]*50))-47)+(12*(t-5)),648,((650-(self.tile[t-1]*50))-37)+(12*(t-5)),658],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[((650-(self.tile[t-1]*50))-46)+(12*(t-5)),649,((650-(self.tile[t-1]*50))-38)+(12*(t-5)),657],
@@ -1695,7 +1703,7 @@ class MonopolyGame():
 				elif self.tile[t-1] == 10:
 					d.rectangle(
 						[106,(12*(t-1))+604,116,(12*(t-1))+614],
-						fill=(0,0,0,255)
+						fill=outline
 					)
 					d.rectangle(
 						[107,(12*(t-1))+605,115,(12*(t-1))+613],
@@ -1705,7 +1713,7 @@ class MonopolyGame():
 					if t < 5:
 						d.rectangle(
 							[106,((650-((self.tile[t-1]-10)*50))-47)+(12*(t-1)),116,((650-((self.tile[t-1]-10)*50))-37)+(12*(t-1))],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[107,((650-((self.tile[t-1]-10)*50))-46)+(12*(t-1)),115,((650-((self.tile[t-1]-10)*50))-38)+(12*(t-1))],
@@ -1714,7 +1722,7 @@ class MonopolyGame():
 					else:
 						d.rectangle(
 							[94,((650-((self.tile[t-1]-10)*50))-47)+(12*(t-5)),104,((650-((self.tile[t-1]-10)*50))-37)+(12*(t-5))],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[95,((650-((self.tile[t-1]-10)*50))-46)+(12*(t-5)),103,((650-((self.tile[t-1]-10)*50))-38)+(12*(t-5))],
@@ -1723,7 +1731,7 @@ class MonopolyGame():
 				elif self.tile[t-1] == 20:
 					d.rectangle(
 						[138-(12*(t-1)),106,148-(12*(t-1)),116],
-						fill=(0,0,0,255)
+						fill=outline
 					)
 					d.rectangle(
 						[139-(12*(t-1)),107,147-(12*(t-1)),115],
@@ -1733,7 +1741,7 @@ class MonopolyGame():
 					if t < 5:
 						d.rectangle(
 							[((100+((self.tile[t-1]-20)*50))+39)-(12*(t-1)),106,((100+((self.tile[t-1]-20)*50))+49)-(12*(t-1)),116],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[((100+((self.tile[t-1]-20)*50))+40)-(12*(t-1)),107,((100+((self.tile[t-1]-20)*50))+48)-(12*(t-1)),115],
@@ -1742,7 +1750,7 @@ class MonopolyGame():
 					else:
 						d.rectangle(
 							[((100+((self.tile[t-1]-20)*50))+39)-(12*(t-5)),94,((100+((self.tile[t-1]-20)*50))+49)-(12*(t-5)),104],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[((100+((self.tile[t-1]-20)*50))+40)-(12*(t-5)),95,((100+((self.tile[t-1]-20)*50))+48)-(12*(t-5)),103],
@@ -1751,7 +1759,7 @@ class MonopolyGame():
 				elif self.tile[t-1] == 30:
 					d.rectangle(
 						[636,138-(12*(t-1)),646,148-(12*(t-1))],
-						fill=(0,0,0,255)
+						fill=outline
 					)
 					d.rectangle(
 						[637,139-(12*(t-1)),645,147-(12*(t-1))],
@@ -1761,7 +1769,7 @@ class MonopolyGame():
 					if t < 5:
 						d.rectangle(
 							[636,((100+((self.tile[t-1]-30)*50))+39)-(12*(t-1)),646,((100+((self.tile[t-1]-30)*50))+49)-(12*(t-1))],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[637,((100+((self.tile[t-1]-30)*50))+40)-(12*(t-1)),645,((100+((self.tile[t-1]-30)*50))+48)-(12*(t-1))],
@@ -1770,7 +1778,7 @@ class MonopolyGame():
 					else:
 						d.rectangle(
 							[648,((100+((self.tile[t-1]-30)*50))+39)-(12*(t-5)),658,((100+((self.tile[t-1]-30)*50))+49)-(12*(t-5))],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[649,((100+((self.tile[t-1]-30)*50))+40)-(12*(t-5)),657,((100+((self.tile[t-1]-30)*50))+48)-(12*(t-5))],
@@ -1787,7 +1795,7 @@ class MonopolyGame():
 					if 0 < t < 10:
 						d.rectangle(
 							[(650-(t*50))-33,606,(650-(t*50))-15,614],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[(650-(t*50))-32,607,(650-(t*50))-16,613],
@@ -1796,7 +1804,7 @@ class MonopolyGame():
 					elif 10 < t < 20:			
 						d.rectangle(
 							[138,(650-((t-10)*50))-33,146,(650-((t-10)*50))-17],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[139,(650-((t-10)*50))-32,145,(650-((t-10)*50))-18],
@@ -1805,7 +1813,7 @@ class MonopolyGame():
 					elif 20 < t < 30:
 						d.rectangle(
 							[(100+((t-20)*50))+17,138,(100+((t-20)*50))+35,146],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[(100+((t-20)*50))+18,139,(100+((t-20)*50))+34,145],
@@ -1814,7 +1822,7 @@ class MonopolyGame():
 					elif 30 < t < 40:
 						d.rectangle(
 							[606,(100+((t-30)*50))+17,614,(100+((t-30)*50))+35],
-							fill=(0,0,0,255)
+							fill=outline
 						)
 						d.rectangle(
 							[607,(100+((t-30)*50))+18,613,(100+((t-30)*50))+34],
@@ -1825,7 +1833,7 @@ class MonopolyGame():
 						if 0 < t < 10:
 							d.rectangle(
 								[((650-(t*50))-47)+(tt*12),606,((650-(t*50))-37)+(tt*12),614],
-								fill=(0,0,0,255)
+								fill=outline
 							)
 							d.rectangle(
 								[((650-(t*50))-46)+(tt*12),607,((650-(t*50))-38)+(tt*12),613],
@@ -1834,7 +1842,7 @@ class MonopolyGame():
 						elif 10 < t < 20:
 							d.rectangle(
 								[138,((650-((t-10)*50))-47)+(tt*12),146,((650-((t-10)*50))-37)+(tt*12)],
-								fill=(0,0,0,255)
+								fill=outline
 							)
 							d.rectangle(
 								[139,((650-((t-10)*50))-46)+(tt*12),145,((650-((t-10)*50))-38)+(tt*12)],
@@ -1843,7 +1851,7 @@ class MonopolyGame():
 						elif 20 < t < 30:
 							d.rectangle(
 								[((100+((t-20)*50))+39)-(tt*12),138,((100+((t-20)*50))+49)-(tt*12),146],
-								fill=(0,0,0,255)
+								fill=outline
 							)
 							d.rectangle(
 								[((100+((t-20)*50))+40)-(tt*12),139,((100+((t-20)*50))+48)-(tt*12),145],
@@ -1852,7 +1860,7 @@ class MonopolyGame():
 						elif 30 < t < 40:
 							d.rectangle(
 								[606,((100+((t-30)*50))+39)-(tt*12),614,((100+((t-30)*50))+49)-(tt*12)],
-								fill=(0,0,0,255)
+								fill=outline
 							)
 							d.rectangle(
 								[607,((100+((t-30)*50))+40)-(tt*12),613,((100+((t-30)*50))+48)-(tt*12)],
@@ -1860,7 +1868,10 @@ class MonopolyGame():
 							)
 			self.imgcache['numhouse']['image'] = img
 		#END
-		img = Image.open(bundled_data_path(self.cog) / 'img.png')
+		if darkMode:
+			img = Image.open(bundled_data_path(self.cog) / 'dark.png')
+		else:
+			img = Image.open(bundled_data_path(self.cog) / 'light.png')
 		for value in self.imgcache.values():
 			img.paste(value['image'], box=(0, 0), mask=value['image'])
 		temp = BytesIO()

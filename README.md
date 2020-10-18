@@ -33,6 +33,7 @@ Name | Description
 [Gameroles](../master/README.md#gameroles) | Grant roles when a user is playing a specific game.
 [Giftaway](../master/README.md#giftaway) | Create grabbable key giveaways.
 [Hangman](../master/README.md#hangman) | Play hangman with the bot.
+[Hider](../master/README.md#hider) | Hide commands from users in help.
 [Monopoly](../master/README.md#monopoly) | Play monopoly with up to 7 other people in your server.
 [Onlinestats](../master/README.md#onlinestats) | Information about what devices people are using to run discord.
 [Partygames](../master/README.md#partygames) | Chat games focused on coming up with words from 3 letters.
@@ -246,6 +247,29 @@ Set if hangman messages should be one edited message or many individual messages
 Defaults to `True`.  
 This value is server specific.
 
+## Hider
+
+This cog will let you hide commands from showing up in help.
+
+### Usage
+
+**`[p]hider <argument>`**  
+Hide commands from users in help.  
+This command is only usable by the bot owner.
+
+**`[p]hider hide <command>`**  
+Hide a command from being displayed in help.  
+This will not work if `[p]helpset showhidden` is enabled.  
+This command is only usable by the bot owner.
+
+**`[p]hider show <command>`**  
+Show a command that was previously hidden by Hider.  
+This command is only usable by the bot owner.
+
+**`[p]hider list`**  
+List the commands that Hider is hiding.  
+This command is only usable by the bot owner.
+
 ## Monopoly
 
 This cog will let you play monopoly with up to 7 other people in your server.
@@ -287,6 +311,12 @@ This value is server specific.
 **`[p]monopolyset bail [value]`**  
 Set how much bail should cost.  
 Defaults to `50`.  
+This command is only usable by the server owner and bot owner.  
+This value is server specific.
+
+**`[p]monopolyset darkmode [value]`**  
+Set if the board should be a darker variant.  
+Defaults to `False`.  
 This command is only usable by the server owner and bot owner.  
 This value is server specific.
 
@@ -567,4 +597,4 @@ The helpful support staff at the [Redbot discord](https://discord.gg/red),
 [Preda](https://github.com/PredaaA) for translating Partygames,  
 Red for creating the sprites used in Battleship,  
 Mistery#3287 for requesting and translating GiftAway,  
-And [Financial Modeling Prep](https://financialmodelingprep.com) for the API used in Stocks.
+And [Tradier](https://tradier.com/) for the API used in Stocks.

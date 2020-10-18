@@ -226,9 +226,8 @@ class Deepfry(commands.Cog):
 		if max(img.size) > 3840:
 			raise ImageFindError('That image is too large.')
 		duration = None
-		if isgif:
-			if 'duration' in img.info:
-				duration = img.info['duration']
+		if isgif and 'duration' in img.info:
+			duration = img.info['duration']
 		else:
 			img = img.convert('RGB')
 		return img, isgif, duration
@@ -276,7 +275,7 @@ class Deepfry(commands.Cog):
 			if isgif:
 				task = functools.partial(self._videonuke, img, duration)
 			else:
-				task = functools.partial(self._nuke, img)	
+				task = functools.partial(self._nuke, img)
 			task = self.bot.loop.run_in_executor(None, task)
 			try:
 				image = await asyncio.wait_for(task, timeout=60)
@@ -384,6 +383,10 @@ class Deepfry(commands.Cog):
 			else:
 				await ctx.send('You will no longer be able to use unverified types.')
 
+	async def red_delete_data_for_user(self, **kwargs):
+		"""Nothing to delete."""
+		return
+
 	@commands.Cog.listener()
 	async def on_message(self, msg):
 		"""Passively deepfries random images."""
@@ -393,6 +396,8 @@ class Deepfry(commands.Cog):
 		if not msg.attachments:
 			return
 		if msg.guild is None:
+			return
+		if await self.bot.cog_disabled_in_guild(self, msg.guild):
 			return
 		if not msg.channel.permissions_for(msg.guild.me).attach_files:
 			return

@@ -18,8 +18,6 @@ class Monopoly(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		self.games = []
-		self.monopoly_game_object = MonopolyGame
-		self.monopoly_ai_object = MonopolyAI
 		self.config = Config.get_conf(self, identifier=7345167904)
 		self.config.register_guild(
 			doMention = False,
@@ -36,6 +34,7 @@ class Monopoly(commands.Cog):
 			houseLimit = 32,
 			timeoutValue = 60,
 			minRaise = 1,
+			darkMode = False,
 			saves = {}
 		)
 
@@ -586,5 +585,40 @@ class Monopoly(commands.Cog):
 				await self.config.guild(ctx.guild).timeoutValue.set(value)
 				await ctx.send(f'The timeout is now set to {value} seconds.')
 
+	@monopolyset.command()
+	async def darkmode(self, ctx, value: bool=None):
+		"""
+		Set if the board should be a darker varient.
+		
+		Defaults to False.
+		This value is server specific.
+		"""
+		if value is None:
+			v = await self.config.guild(ctx.guild).darkMode()
+			if v:
+				await ctx.send('The board is currently the darker version.')
+			else:
+				await ctx.send('The board is currently the lighter version.')
+		else:
+			await self.config.guild(ctx.guild).darkMode.set(value)
+			if value:
+				await ctx.send('The board will now be the darker version.')
+			else:
+				await ctx.send('The board will now be the lighter version.')
+
 	def cog_unload(self):
 		return [game._task.cancel() for game in self.games]
+
+	async def red_delete_data_for_user(self, *, requester, user_id):
+		"""Replace a user with an AI in all of their games."""
+		data = await self.config.all_guilds()
+		for guild_id, config in data.items():
+			for name, save in config['saves'].items():
+				userinfo = save['uid']
+				change = False
+				for idx, uid in enumerate(save['uid']):
+					if uid == user_id:
+						userinfo[idx] = {'me': idx, 'display_name': '[AI]'}
+						change = True
+				if change:
+					await self.config.guild_from_id(guild_id).set_raw('saves', name, 'uid', value=userinfo)
